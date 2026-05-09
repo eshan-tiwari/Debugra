@@ -3,6 +3,7 @@
 [![Live](https://img.shields.io/badge/Live-debugra.tech-8b5cf6?style=flat-square&logo=vercel&logoColor=white)](https://debugra.tech)
 [![GitHub](https://img.shields.io/badge/GitHub-omkhandare55%2FDebugra-181717?style=flat-square&logo=github)](https://github.com/omkhandare55/Debugra)
 [![Backend](https://img.shields.io/badge/Backend-Cloud%20Run-4285F4?style=flat-square&logo=googlecloud&logoColor=white)](https://cloud.google.com/run)
+[![Accessibility](https://img.shields.io/badge/Accessibility-100%2F100-success?style=flat-square&logo=lighthouse)](https://debugra.tech)
 
 > **Live at → [https://debugra.tech](https://debugra.tech)**
 
@@ -26,6 +27,8 @@ A professional, real-time collaborative code editor for developers and CS studen
 - **Saved Code History** — Authenticated users can save code with custom file names to Firestore and reload it anytime
 - **User Input (stdin)** — Auto-detects input functions and syncs stdin across all room members
 - **Clean & Aesthetic UI** — Minimalist design system using geometric symbols (`✦`, `⟡`) and language badges (`PY`, `JS`, `C++`) instead of generic emojis
+- **100/100 Accessibility** — Perfect Lighthouse A11y score with ARIA labels, semantic HTML, and high-contrast visuals
+- **Smart Branding** — High-resolution SVG logos and a smart favicon that automatically adapts to the user's OS-level dark/light mode preferences
 - **Mobile Responsive** — Bootstrap-powered responsive layout with a dedicated mobile bottom navigation bar
 - **SQLite (SQL)** — SQL execution uses SQLite 3.46.1 via Wandbox — no `CREATE DATABASE` needed
 
@@ -227,6 +230,7 @@ Python, JavaScript, TypeScript, Java, C++, C, C#, Go, Rust, Ruby, PHP, Swift, Pe
 ## Design Principles
 
 - **Aesthetic** — No generic emojis. Geometric symbols (`✦`, `⟡`) and text badges (`PY`, `JS`) maintain a premium developer aesthetic.
+- **Accessible & Inclusive** — Perfect 100/100 Lighthouse accessibility score.
 - **Separation of Concerns** — All business logic lives in custom hooks, not inside components.
 - **Single Source of Truth** — All constants (breakpoints, defaults, enums) in `src/config/constants.js`.
 - **Mobile-First** — Bootstrap 5 grid + dedicated `MobileBottomNav` for seamless mobile experience.
