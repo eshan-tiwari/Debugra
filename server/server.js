@@ -6,6 +6,9 @@ const compression = require('compression');
 const { rateLimit } = require('express-rate-limit');
 const executeRoutes = require('./routes/execute');
 const aiRoutes = require('./routes/ai');
+const memoryRoutes = require('./routes/memory');
+const memoryTracker = require('./middleware/memoryTracker');
+const memoryProfiler = require('./services/memoryProfiler');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
@@ -106,6 +109,7 @@ app.use('/api', globalLimiter);
 // ──────────────────────────────────────────────
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
+app.use(memoryTracker);
 
 // ──────────────────────────────────────────────
 // Routes
@@ -116,6 +120,7 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/execute', executeRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/admin/memory-profile', memoryRoutes);
 
 // ──────────────────────────────────────────────
 // Error Handler
@@ -125,4 +130,5 @@ app.use(errorHandler);
 app.listen(PORT, () => {
   console.log(`🚀 Debugra server running on port ${PORT}`);
   console.log(`🔒 Security headers: HSTS=${isProd}, CSP=on, Permissions-Policy=on`);
+  memoryProfiler.start();
 });
