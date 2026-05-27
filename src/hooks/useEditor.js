@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { LANGUAGES } from '../utils/languageConfig';
-import { LANG_FILE_NAMES, INPUT_PATTERNS, DEFAULT_LANGUAGE, DEFAULT_FONT_SIZE } from '../config/constants';
+import { LANG_FILE_NAMES, INPUT_PATTERNS, DEFAULT_LANGUAGE, DEFAULT_FONT_SIZE,DEFAULT_THEME } from '../config/constants';
 
 /**
  * useEditor
@@ -16,6 +16,7 @@ export function useEditor({ user, onNeedAuth }) {
   const [code, setCode] = useState(LANGUAGES[DEFAULT_LANGUAGE].template);
   const [language, setLanguage] = useState(DEFAULT_LANGUAGE);
   const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
+  const [theme,setTheme] = useState(()=>localStorage.getItem('debugra-theme')??DEFAULT_THEME)
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
   const [stdinValue, setStdinValue] = useState('');
   const [stdinOpen, setStdinOpen] = useState(false);
@@ -24,6 +25,10 @@ export function useEditor({ user, onNeedAuth }) {
     const pattern = INPUT_PATTERNS[language];
     return pattern ? pattern.test(code) : false;
   }, [code, language]);
+
+  useEffect(() => {
+    localStorage.setItem('debugra-theme', theme);
+  }, [theme]);
 
   // Auto-open stdin panel when input-reading functions are detected
   useEffect(() => {
@@ -83,6 +88,7 @@ export function useEditor({ user, onNeedAuth }) {
     code, setCode,
     language, setLanguage,
     fontSize, setFontSize,
+    theme, setTheme,
     cursorPos, setCursorPos,
     stdinValue, setStdinValue,
     stdinOpen, setStdinOpen,

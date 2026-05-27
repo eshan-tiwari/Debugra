@@ -9,7 +9,7 @@ import { Settings, Volume2, VolumeX } from 'lucide-react';
 import { useRoom, useAI, useExecution, useEditor, useIsMobile, useAudioFeedback } from '../../hooks';
 import { registerSnippets } from '../../utils/snippetsConfig';
 import { LANGUAGES } from '../../utils/languageConfig';
-import { LANG_FILE_NAMES, MOBILE_TABS, OUTPUT_TABS } from '../../config/constants';
+import { LANG_FILE_NAMES, MOBILE_TABS, OUTPUT_TABS, EDITOR_THEMES } from '../../config/constants';
 
 import AuthModal from '../Auth/AuthModal';
 import ChatPanel from '../Chat/ChatPanel';
@@ -92,6 +92,57 @@ export default function EditorPage({ user }) {
       registerSnippets(monaco);
       window.__MONACO_SNIPPETS_REGISTERED__ = true;
     }
+
+    monaco.editor.defineTheme('dracula', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: 'comment', foreground: '6272a4', fontStyle: 'italic' },
+        { token: 'keyword', foreground: 'ff79c6' },
+        { token: 'string', foreground: 'f1fa8c' },
+        { token: 'number', foreground: 'bd93f9' },
+        { token: 'type', foreground: '8be9fd' },
+        { token: 'function', foreground: '50fa7b' },
+        { token: 'variable', foreground: 'f8f8f2' },
+        { token: 'operator', foreground: 'ff79c6' },
+      ],
+      colors: {
+        'editor.background': '#282a36',
+        'editor.foreground': '#f8f8f2',
+        'editor.lineHighlightBackground': '#44475a',
+        'editor.selectionBackground': '#44475a80',
+        'editorCursor.foreground': '#f8f8f2',
+        'editorLineNumber.foreground': '#6272a4',
+        'editorLineNumber.activeForeground': '#f8f8f2',
+        'editorBracketMatch.border': '#bd93f9',
+      },
+    });
+
+    monaco.editor.defineTheme('monokai', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: 'comment', foreground: '75715e', fontStyle: 'italic' },
+        { token: 'keyword', foreground: 'f92672' },
+        { token: 'string', foreground: 'e6db74' },
+        { token: 'number', foreground: 'ae81ff' },
+        { token: 'type', foreground: '66d9ef' },
+        { token: 'function', foreground: 'a6e22e' },
+        { token: 'variable', foreground: 'f8f8f2' },
+        { token: 'operator', foreground: 'f92672' },
+      ],
+      colors: {
+        'editor.background': '#272822',
+        'editor.foreground': '#f8f8f2',
+        'editor.lineHighlightBackground': '#3e3d32',
+        'editor.selectionBackground': '#49483e',
+        'editorCursor.foreground': '#f8f8f2',
+        'editorLineNumber.foreground': '#75715e',
+        'editorLineNumber.activeForeground': '#f8f8f2',
+        'editorBracketMatch.border': '#a6e22e',
+      },
+    });
+
   };
 
   const handleEditorMount = (editorInstance) => {
@@ -201,6 +252,16 @@ export default function EditorPage({ user }) {
               <option key={key} value={key}>{lang.name}</option>
             ))}
           </select>
+          <select
+            className="lang-select d-none d-sm-block"
+            value={editor.theme}
+            onChange={(e) => editor.setTheme(e.target.value)}
+            aria-label="Editor theme"
+          >
+            {EDITOR_THEMES.map((t) => (
+              <option key={t.id} value={t.id}>{t.label}</option>
+            ))}
+          </select>
           <div className="font-size-ctrl d-none d-sm-flex align-items-center gap-1">
             <button onClick={editor.decreaseFontSize}>−</button>
             <span>{editor.fontSize}px</span>
@@ -218,29 +279,29 @@ export default function EditorPage({ user }) {
             </button>
             <button className="ai-btn" onClick={ai.generateTests} disabled={ai.isAILoading || room.isReadOnly}>Tests</button>
             <button className="ai-btn" onClick={ai.visualize} disabled={ai.isAILoading}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
               Visualize
             </button>
             <button className="ai-btn" onClick={ai.explain} disabled={ai.isAILoading}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></svg>
               Explain
             </button>
           </div>
           <button className="ai-btn fix" onClick={ai.fix} disabled={ai.isAILoading || room.isReadOnly}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" /></svg>
             Fix
           </button>
           <div className="d-flex align-items-center gap-1">
             <button className="toolbar-icon-btn" aria-label="Download Code" onClick={editor.downloadCode} title="Download">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
             </button>
             <button className="toolbar-icon-btn" aria-label="Save to Cloud" onClick={editor.saveToCloud} title="Save to cloud" disabled={room.isReadOnly}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
             </button>
             {user && (
               <button className="toolbar-icon-btn" aria-label="Toggle History" onClick={() => setShowHistory(!showHistory)} title="History"
                 style={showHistory ? { background: 'var(--bg-active)', color: 'var(--accent)' } : {}}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
               </button>
             )}
             <div className="audio-settings-wrap">
@@ -261,6 +322,23 @@ export default function EditorPage({ user }) {
                     <button className="history-action-btn" aria-label="Close Settings" onClick={() => setShowSettings(false)}>
                       <i className="bi bi-x" />
                     </button>
+                  </div>
+                  <div className="audio-settings-row">
+                    <div className="audio-settings-label">
+                      <i className="bi bi-palette" style={{ fontSize: '14px' }} />
+                      <span>Theme</span>
+                    </div>
+                    <select
+                      className="lang-select"
+                      value={editor.theme}
+                      onChange={(e) => editor.setTheme(e.target.value)}
+                      aria-label="Editor theme"
+                      style={{ fontSize: '0.7rem', padding: '2px 6px' }}
+                    >
+                      {EDITOR_THEMES.map((t) => (
+                        <option key={t.id} value={t.id}>{t.label}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="audio-settings-row">
                     <div className="audio-settings-label">
@@ -299,7 +377,7 @@ export default function EditorPage({ user }) {
           <button className="run-btn d-none d-sm-flex align-items-center" onClick={execution.run} disabled={execution.isRunning}>
             {execution.isRunning
               ? <><span className="spinner" /> Running...</>
-              : <><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Run</>
+              : <><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg> Run</>
             }
           </button>
         </div>
@@ -330,7 +408,7 @@ export default function EditorPage({ user }) {
           <div id="editor-container" style={{ flex: 1, minHeight: 0, opacity: room.isReadOnly ? 0.8 : 1 }}>
             {room.isReadOnly && (
               <div className="readonly-badge">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
                 Read Only
               </div>
             )}
@@ -341,7 +419,7 @@ export default function EditorPage({ user }) {
               onChange={(val) => { if (!room.isReadOnly) editor.setCode(val || ''); }}
               beforeMount={handleEditorWillMount}
               onMount={handleEditorMount}
-              theme="vs-dark"
+              theme={editor.theme}
               options={{
                 readOnly: room.isReadOnly,
                 fontSize: editor.fontSize,
