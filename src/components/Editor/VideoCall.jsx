@@ -24,7 +24,18 @@ const ICE_SERVERS = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
-const VideoCall = ({ roomId, userName, onClose }) => {
+const VideoCall = ({ roomId, userName, onClose, audioOnly = false }) => {
+  // Test-only flag: when URL contains ?testLocal=1 we render a static local meter
+  // This avoids depending on getUserMedia / AudioContext in headless test environments.
+  let isTestLocal = false;
+  try {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      isTestLocal = params.get('testLocal') === '1';
+    }
+  } catch (e) {
+    isTestLocal = false;
+  }
   const [peers, setPeers] = useState(new Map());
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
@@ -36,6 +47,11 @@ const VideoCall = ({ roomId, userName, onClose }) => {
   const peersRef = useRef(new Map());
   const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const localAnalyserRef = useRef(null);
+  const localDataRef = useRef(null);
+  const localRafRef = useRef(null);
+  const [localLevel, setLocalLevel] = useState(0);
 
   // Generate a persistent, session-unique ID for the local peer
   const myPeerId = useRef(crypto.randomUUID().slice(0, 8)).current;
@@ -43,16 +59,21 @@ const VideoCall = ({ roomId, userName, onClose }) => {
   // ── Acquire local media ──────────────────────────
   const startLocalStream = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280, max: 1920 },
-          height: { ideal: 720, max: 1080 },
-          facingMode: 'user',
-        },
-        audio: { echoCancellation: true, noiseSuppression: true },
-      });
+      const constraints = audioOnly
+        ? { audio: { echoCancellation: true, noiseSuppression: true }, video: false }
+        : {
+            video: {
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 },
+              facingMode: 'user',
+            },
+            audio: { echoCancellation: true, noiseSuppression: true },
+          };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStreamRef.current = stream;
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+      if (!audioOnly && localVideoRef.current) localVideoRef.current.srcObject = stream;
+      // Setup local analyser will be done by caller when stream is available
       setConnectionStatus('ready');
       return stream;
     } catch (err) {
@@ -65,10 +86,12 @@ const VideoCall = ({ roomId, userName, onClose }) => {
       setConnectionStatus('error');
       return null;
     }
-  }, []);
+  }, [audioOnly]);
 
   useEffect(() => {
-    startLocalStream();
+    startLocalStream().then((stream) => {
+      if (stream && stream.getAudioTracks().length) setupLocalAnalyser(stream);
+    });
     const currentPeers = peersRef.current;
     return () => {
       // Cleanup tracks on unmount
@@ -78,9 +101,60 @@ const VideoCall = ({ roomId, userName, onClose }) => {
         peerObj.connection.close();
         if (peerObj.unsubConnection) peerObj.unsubConnection();
         if (peerObj.unsubCandidates) peerObj.unsubCandidates();
+        if (peerObj.raf) cancelAnimationFrame(peerObj.raf);
+        try {
+          peerObj.analyserSource?.disconnect();
+          peerObj.analyser?.disconnect();
+        } catch (e) {
+          console.warn('Error disconnecting peer analyser', e);
+        }
       });
+      // stop local analyser
+      if (localRafRef.current) cancelAnimationFrame(localRafRef.current);
+      try {
+        localAnalyserRef.current?.disconnect();
+        audioCtxRef.current?.close();
+      } catch (e) {
+        console.warn('Error closing local analyser/audio context', e);
+      }
     };
   }, [startLocalStream]);
+
+  const ensureAudioContext = () => {
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    return audioCtxRef.current;
+  };
+
+  const setupLocalAnalyser = useCallback((stream) => {
+    try {
+      const audioCtx = ensureAudioContext();
+      const src = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      src.connect(analyser);
+      localAnalyserRef.current = analyser;
+      localDataRef.current = data;
+
+      const tick = () => {
+        analyser.getByteTimeDomainData(data);
+        // compute normalized RMS
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) {
+          const v = data[i] - 128;
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / data.length) / 128;
+        setLocalLevel(Math.min(1, rms));
+        localRafRef.current = requestAnimationFrame(tick);
+      };
+      localRafRef.current = requestAnimationFrame(tick);
+    } catch (e) {
+      console.error('Local analyser setup failed', e);
+    }
+  }, []);
 
   // Update Firestore presence details
   const updatePresence = useCallback(
@@ -128,12 +202,48 @@ const VideoCall = ({ roomId, userName, onClose }) => {
           next.set(peerId, p);
           return next;
         });
+
+        // Setup per-peer analyser for mic activity
+        try {
+          if (remoteStream && remoteStream.getAudioTracks().length) {
+            const audioCtx = ensureAudioContext();
+            const src = audioCtx.createMediaStreamSource(remoteStream);
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 256;
+            const data = new Uint8Array(analyser.frequencyBinCount);
+            src.connect(analyser);
+
+            const tickPeer = () => {
+              analyser.getByteTimeDomainData(data);
+              let sum = 0;
+              for (let i = 0; i < data.length; i++) {
+                const v = data[i] - 128;
+                sum += v * v;
+              }
+              const rms = Math.sqrt(sum / data.length) / 128;
+              setPeers((prev) => {
+                const next = new Map(prev);
+                const existing = next.get(peerId) || { id: peerId };
+                existing.volume = Math.min(1, rms);
+                next.set(peerId, existing);
+                return next;
+              });
+              peerObj.raf = requestAnimationFrame(tickPeer);
+            };
+            peerObj.analyser = analyser;
+            peerObj.analyserSource = src;
+            peerObj.raf = requestAnimationFrame(tickPeer);
+          }
+        } catch (e) {
+          console.error('Peer analyser setup failed', e);
+        }
       };
 
       // Handle local ICE candidates and publish them to Firestore
       pc.onicecandidate = (event) => {
         if (event.candidate) {
-          const connectionId = myPeerId < peerId ? `${myPeerId}_${peerId}` : `${peerId}_${myPeerId}`;
+          const connectionId =
+            myPeerId < peerId ? `${myPeerId}_${peerId}` : `${peerId}_${myPeerId}`;
           const candidatesCol = collection(
             db,
             'rooms',
@@ -259,6 +369,13 @@ const VideoCall = ({ roomId, userName, onClose }) => {
           peerObj.connection.close();
           if (peerObj.unsubConnection) peerObj.unsubConnection();
           if (peerObj.unsubCandidates) peerObj.unsubCandidates();
+          if (peerObj.raf) cancelAnimationFrame(peerObj.raf);
+          try {
+            peerObj.analyserSource?.disconnect();
+            peerObj.analyser?.disconnect();
+          } catch (e) {
+            console.warn('Error disconnecting peer analyser', e);
+          }
           peersRef.current.delete(peerId);
           setPeers((prev) => {
             const next = new Map(prev);
@@ -422,16 +539,41 @@ const VideoCall = ({ roomId, userName, onClose }) => {
         )}
 
         <div className="vc-grid">
-          {/* Local video tile */}
+          {/* Local tile (video or audio-only) */}
           <div className="vc-tile vc-tile--local">
-            <video
-              ref={localVideoRef}
-              autoPlay
-              muted
-              playsInline
-              className={`vc-video ${isScreenSharing ? 'vc-video--screen' : ''}`}
-            />
-            {isVideoOff && <div className="vc-video-off">📷 Camera Off</div>}
+            {!audioOnly ? (
+              <>
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  className={`vc-video ${isScreenSharing ? 'vc-video--screen' : ''}`}
+                />
+                {isVideoOff && <div className="vc-video-off">📷 Camera Off</div>}
+              </>
+            ) : (
+              <div className="vc-audio-tile">
+                <div className="vc-audio-icon">🎙️</div>
+                <div className="vc-audio-name">{userName || 'You'} (You)</div>
+                <div className="vc-audio-state">{isMuted ? '🔇 Muted' : 'Live'}</div>
+                {isTestLocal ? (
+                  // Static test meter for headless e2e environments
+                  <div className={`vc-meter ${isMuted ? 'vc-meter-muted' : ''}`}>
+                    <div className="vc-meter-fill" style={{ width: '50%' }} />
+                  </div>
+                ) : (
+                  <div
+                    className={`vc-meter ${isMuted ? 'vc-meter-muted' : ''} ${!isMuted && localLevel > 0.7 ? 'peak' : ''}`}
+                  >
+                    <div
+                      className="vc-meter-fill"
+                      style={{ width: `${Math.round(localLevel * 100)}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
             <div className="vc-tile-label">
               {userName || 'You'} (You){isMuted ? ' 🔇' : ''}
               {isScreenSharing ? ' (Sharing)' : ''}
@@ -441,15 +583,42 @@ const VideoCall = ({ roomId, userName, onClose }) => {
           {/* Remote peer tiles */}
           {Array.from(peers.values()).map((peer) => (
             <div key={peer.id} className="vc-tile">
-              <video
-                autoPlay
-                playsInline
-                className={`vc-video ${peer.isScreenSharing ? 'vc-video--screen' : ''}`}
-                ref={(el) => {
-                  if (el && peer.stream) el.srcObject = peer.stream;
-                }}
-              />
-              {peer.isVideoOff && <div className="vc-video-off">📷 Camera Off</div>}
+              {!audioOnly ? (
+                <video
+                  autoPlay
+                  playsInline
+                  className={`vc-video ${peer.isScreenSharing ? 'vc-video--screen' : ''}`}
+                  ref={(el) => {
+                    if (el && peer.stream) el.srcObject = peer.stream;
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    height: '100%',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <audio
+                    autoPlay
+                    ref={(el) => {
+                      if (el && peer.stream) el.srcObject = peer.stream;
+                    }}
+                  />
+                  <div
+                    className={`vc-meter ${peer.isMuted ? 'vc-meter-muted' : ''} ${!peer.isMuted && (peer.volume || 0) > 0.7 ? 'peak' : ''}`}
+                  >
+                    <div
+                      className="vc-meter-fill"
+                      style={{ width: `${Math.round((peer.volume || 0) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              {peer.isVideoOff && !audioOnly && <div className="vc-video-off">📷 Camera Off</div>}
               <div className="vc-tile-label">
                 {peer.name || 'Peer'}
                 {peer.isMuted ? ' 🔇' : ''}
@@ -467,20 +636,24 @@ const VideoCall = ({ roomId, userName, onClose }) => {
           >
             {isMuted ? '🔇' : '🎤'}
           </button>
-          <button
-            className={`vc-ctrl-btn ${isVideoOff ? 'vc-ctrl-btn--active' : ''}`}
-            onClick={toggleVideo}
-            title={isVideoOff ? 'Turn Camera On' : 'Turn Camera Off'}
-          >
-            {isVideoOff ? '📷' : '🎥'}
-          </button>
-          <button
-            className={`vc-ctrl-btn ${isScreenSharing ? 'vc-ctrl-btn--active' : ''}`}
-            onClick={toggleScreenShare}
-            title={isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
-          >
-            🖥️
-          </button>
+          {!audioOnly && (
+            <>
+              <button
+                className={`vc-ctrl-btn ${isVideoOff ? 'vc-ctrl-btn--active' : ''}`}
+                onClick={toggleVideo}
+                title={isVideoOff ? 'Turn Camera On' : 'Turn Camera Off'}
+              >
+                {isVideoOff ? '📷' : '🎥'}
+              </button>
+              <button
+                className={`vc-ctrl-btn ${isScreenSharing ? 'vc-ctrl-btn--active' : ''}`}
+                onClick={toggleScreenShare}
+                title={isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
+              >
+                🖥️
+              </button>
+            </>
+          )}
           <button className="vc-ctrl-btn vc-ctrl-btn--hangup" onClick={hangUp} title="Hang Up">
             📞
           </button>
