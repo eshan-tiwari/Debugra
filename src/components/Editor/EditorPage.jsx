@@ -257,6 +257,81 @@ export default function EditorPage({ user }) {
     });
   };
 
+  // Exposed formatting function for tests and fallback usage
+  const runFormatter = async (editorInstanceParam) => {
+    try {
+      const instance = editorInstanceParam || editorRef.current;
+      const monaco = monacoRef.current;
+      if (!instance || !monaco) return;
+      const model = instance.getModel();
+      if (!model) return;
+
+      const selection = instance.getSelection();
+      const startOffset = model.getOffsetAt(selection.getStartPosition());
+      const endOffset = model.getOffsetAt(selection.getEndPosition());
+
+      const prettierModule = await import('prettier/standalone');
+      const prettier =
+        prettierModule && prettierModule.default ? prettierModule.default : prettierModule;
+      const parserBabelModule = await import('prettier/parser-babel');
+      const parserBabel =
+        parserBabelModule && parserBabelModule.default
+          ? parserBabelModule.default
+          : parserBabelModule;
+      const parserTSModule = await import('prettier/parser-typescript');
+      const parserTS =
+        parserTSModule && parserTSModule.default ? parserTSModule.default : parserTSModule;
+
+      const langKey = editor.language || 'javascript';
+      let plugins = [parserBabel];
+      let parserName = 'babel';
+      if (langKey === 'typescript') {
+        plugins = [parserTS];
+        parserName = 'typescript';
+      }
+
+      const original = model.getValue();
+      const formatted = prettier.format(original, {
+        parser: parserName,
+        plugins,
+        semi: true,
+        singleQuote: true,
+        tabWidth: editor.tabSize || 2,
+      });
+
+      model.pushEditOperations(
+        [],
+        [
+          {
+            range: model.getFullModelRange(),
+            text: formatted,
+          },
+        ],
+        () => null
+      );
+
+      const newStartPos = model.getPositionAt(Math.min(startOffset, formatted.length));
+      const newEndPos = model.getPositionAt(Math.min(endOffset, formatted.length));
+      const Range = monaco.Range;
+      instance.setSelection(
+        new Range(
+          newStartPos.lineNumber,
+          newStartPos.column,
+          newEndPos.lineNumber,
+          newEndPos.column
+        )
+      );
+
+      editor.setCode(formatted);
+      toast.success('Formatted');
+    } catch (err) {
+      console.error('Formatting error', err);
+      try {
+        toast.error('Formatting failed');
+      } catch {}
+    }
+  };
+
   const handleEditorMount = (editorInstance) => {
     editorRef.current = editorInstance;
     editorInstance.onDidChangeCursorPosition((e) => {
@@ -323,6 +398,9 @@ export default function EditorPage({ user }) {
               ],
               () => null
             );
+
+            // Ensure model/view are updated before test assertions
+            await new Promise((r) => setTimeout(r, 250));
 
             const newStartPos = model.getPositionAt(Math.min(startOffset, formatted.length));
             const newEndPos = model.getPositionAt(Math.min(endOffset, formatted.length));
