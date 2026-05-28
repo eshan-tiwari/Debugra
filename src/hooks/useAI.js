@@ -8,6 +8,7 @@ import {
   aiAuditCode,
   aiExplainError,
 } from '../services/api';
+import { showRateLimitToast } from '../utils/rateLimitToast';
 import { LANGUAGES } from '../utils/languageConfig';
 import { OUTPUT_TABS } from '../config/constants';
 
@@ -37,7 +38,11 @@ export function useAI({ language, code, stderr, setActiveOutputTab, editorRef })
         const result = await action();
         setAiResponse(result);
       } catch (err) {
-        toast.error(err.message || 'AI request failed');
+        if (err.status === 429) {
+          showRateLimitToast(err.message, err.retryAfter);
+        } else {
+          toast.error(err.message || 'AI request failed');
+        }
       } finally {
         setIsAILoading(false);
       }
