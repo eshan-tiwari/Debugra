@@ -39,6 +39,7 @@ import MobileBottomNav from './MobileBottomNav';
 import VideoCall from './VideoCall';
 import VotePopup from './VotePopup';
 import { getSessionApiKey, isSecureApiKeyStored } from '../../services/secureApiKeyStore';
+import DebugOverlay from './DebugOverlay';
 
 function getApiKeyStatus() {
   if (getSessionApiKey()) return 'unlocked';
@@ -75,6 +76,7 @@ export default function EditorPage({ user }) {
   const [showVideoCall, setShowVideoCall] = useState(false);
   const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [blurIntensity, setBlurIntensity] = useState(10); //Adds State for wallpaper blur
+  const [showDebugOverlay, setShowDebugOverlay] = useState(false);
   const resizingRef = useRef(false);
 
   const isMobile = useIsMobile();
@@ -1264,6 +1266,123 @@ export default function EditorPage({ user }) {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Resize Handle (desktop only) */}
+        {!isMobile && <div className="resize-handle" onMouseDown={handleResizeStart} />}
+
+        {/* History Panel (desktop) */}
+        {showHistory && user && !isMobile && (
+          <HistoryPanel
+            user={user}
+            onLoadCode={editor.loadCode}
+            onClose={() => setShowHistory(false)}
+          />
+        )}
+
+        {/* OUTPUT PANE */}
+        <div
+          className="output-pane glass-panel"
+          style={
+            isMobile
+              ? mobileTab === MOBILE_TABS.OUTPUT
+                ? { display: 'flex', width: '100%' }
+                : { display: 'none' }
+              : { width: outputWidth + 'px' }
+          }
+        >
+          <div className="output-tabs">
+            {/* copy */}
+             <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <button
+                className={`output-tab ${
+                  execution.activeOutputTab === OUTPUT_TABS.STDOUT ? 'active' : ''
+                }`}
+                onClick={() => execution.setActiveOutputTab(OUTPUT_TABS.STDOUT)}
+              >
+                Output
+              </button>
+
+              {execution.stdout && (
+                <button
+                  onClick={handleCopyOutput}
+                  title="Copy Output"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: '#aaa',
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}
+                >
+                  {copied ? '✓' : '📋'}
+                </button>
+              )}
+             </div>
+            {execution.stderr && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <button
+                  className={`output-tab ${execution.activeOutputTab === OUTPUT_TABS.STDERR ? 'active' : ''}`}
+                  onClick={() => execution.setActiveOutputTab(OUTPUT_TABS.STDERR)}
+                >
+                  <span
+                    style={{
+                      color: execution.activeOutputTab === OUTPUT_TABS.STDERR ? '#f44747' : undefined,
+                    }}
+                  >
+                    ✦ Errors
+                  </span>
+                </button>
+                {/* ── Debug with AI inline button ── */}
+                <button
+                  id="debug-with-ai-btn"
+                  className="debug-ai-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    execution.setActiveOutputTab(OUTPUT_TABS.STDERR);
+                    ai.debugError();
+                    setShowDebugOverlay(true);
+                  }}
+                  title="Explain this error in plain English"
+                  aria-label="Debug with AI"
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                  Debug with AI
+                </button>
+              </div>
+            )}
+            {(ai.aiResponse || ai.isAILoading) && (
+              <button
+                className={`output-tab ${execution.activeOutputTab === OUTPUT_TABS.AI ? 'active' : ''}`}
+                onClick={() => execution.setActiveOutputTab(OUTPUT_TABS.AI)}
+              >
+                AI{' '}
+                {ai.isAILoading && (
+                  <span
+                    className="spinner"
+                    style={{ width: '8px', height: '8px', borderWidth: '1.5px', marginLeft: '4px' }}
+                  />
+                )}
+              </button>
+            )}
+          </div>
 
           <div className="output-content">
             <div
@@ -1452,14 +1571,33 @@ export default function EditorPage({ user }) {
       )}
       {showAccount && user && <AccountSettings onClose={() => setShowAccount(false)} user={user} />}
 
-      {/* Video Call Overlay */}
-      {showVideoCall && room.roomId && (
-        <VideoCall
-          roomId={room.roomId}
-          userName={user?.displayName || user?.email?.split('@')[0] || 'Guest'}
-          onClose={() => setShowVideoCall(false)}
-        />
-      )}
+      {/* Debug Overlay */}
+      <DebugOverlay
+        isOpen={showDebugOverlay}
+        isLoading={ai.isDebugLoading}
+        response={ai.debugResponse}
+        stderr={execution.stderr}
+        onClose={() => {
+          setShowDebugOverlay(false);
+          ai.clearDebug();
+        }}
+        onApplyFix={() => {
+          ai.fix();
+        }}
+      />
+
+{/* Video Call Overlay */}
+{showVideoCall && room.roomId && (
+  <VideoCall
+    roomId={room.roomId}
+    userName={
+      user?.displayName ||
+      user?.email?.split('@')[0] ||
+      'Guest'
+    }
+    onClose={() => setShowVideoCall(false)}
+  />
+)}
 
       {/* Real-time Democratic Vote Popup */}
       <VotePopup room={room} user={user} />
