@@ -69,6 +69,7 @@ export default function EditorPage({ user }) {
   const [roomPassword, setRoomPassword] = useState('');
   const [outputWidth, setOutputWidth] = useState(420);
   const [minimapSide, setMinimapSide] = useState('right');
+  const [showMinimap, setShowMinimap] = useState(true); // ✅ CHANGE 1: Added showMinimap state
   const [showSettings, setShowSettings] = useState(false);
   const [showVideoCall, setShowVideoCall] = useState(false);
   const [showVoiceCall, setShowVoiceCall] = useState(false);
@@ -553,6 +554,16 @@ export default function EditorPage({ user }) {
             >
               Right
             </button>
+            {/* ✅ CHANGE 2: Added Show/Hide toggle button for minimap */}
+            <button
+              type="button"
+              className={showMinimap ? 'active' : ''}
+              aria-pressed={showMinimap}
+              onClick={() => setShowMinimap(!showMinimap)}
+              title="Toggle minimap visibility"
+            >
+              {showMinimap ? 'Hide' : 'Show'}
+            </button>
           </div>
         </div>
         <div className="toolbar-right d-flex align-items-center gap-2">
@@ -911,7 +922,7 @@ export default function EditorPage({ user }) {
                 fontSize: editor.fontSize,
                 fontFamily: getEditorFontFamily(editor.fontFamily),
                 minimap: {
-                  enabled: true,
+                  enabled: showMinimap, // ✅ CHANGE 3: Use showMinimap state instead of hardcoded true
                   side: minimapSide,
                   showSlider: 'always',
                   renderCharacters: false,
