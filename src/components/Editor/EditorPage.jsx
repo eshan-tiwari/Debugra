@@ -5,6 +5,9 @@ import { auth } from '../../services/firebase';
 import Editor from '@monaco-editor/react';
 import toast from 'react-hot-toast';
 import { Settings, Volume2, VolumeX } from 'lucide-react';
+import SidebarOutliner from './SidebarOutliner';
+import { parseCodeToOutline } from '../../utils/codeParser';
+
 
 import {
   useRoom,
@@ -59,7 +62,14 @@ export default function EditorPage({ user }) {
   const [minimapSide, setMinimapSide] = useState('right');
   const [showSettings, setShowSettings] = useState(false);
   const [showVideoCall, setShowVideoCall] = useState(false);
+  const [outlinerWidth, setOutlinerWidth] = useState(240);
+  const [showOutliner, setShowOutliner] = useState(true);
+  const [outline, setOutline] = useState([]);
   const resizingRef = useRef(false);
+  const resizingOutlinerRef = useRef(false);
+  const decorationsRef = useRef([]);
+
+
 
   const isMobile = useIsMobile();
   const audioFeedback = useAudioFeedback();
@@ -269,8 +279,94 @@ export default function EditorPage({ user }) {
     window.addEventListener('mouseup', onUp);
   };
 
+  // ─── Realtime Outliner Parser & Navigation ───────────────────────────────
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const newOutline = parseCodeToOutline(editor.code, editor.language);
+      setOutline(newOutline);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [editor.code, editor.language]);
+
+  useEffect(() => {
+    return () => {
+      if (editorRef.current && decorationsRef.current.length > 0) {
+        try {
+          editorRef.current.deltaDecorations(decorationsRef.current, []);
+        } catch (e) {
+          // ignore
+        }
+      }
+    };
+  }, []);
+
+  const findActiveNodeLine = (nodes, currentLine) => {
+    let bestMatch = null;
+    const traverse = (nodeList) => {
+      for (const node of nodeList) {
+        if (currentLine >= node.line) {
+          if (!bestMatch || node.line > bestMatch.line) {
+            bestMatch = node;
+          }
+        }
+        if (node.children) {
+          traverse(node.children);
+        }
+      }
+    };
+    traverse(nodes);
+    return bestMatch ? bestMatch.line : null;
+  };
+
+  const activeOutlineLine = findActiveNodeLine(outline, editor.cursorPos.line);
+
+  const handleOutlinerResizeStart = (e) => {
+    e.preventDefault();
+    resizingOutlinerRef.current = true;
+    const startX = e.clientX;
+    const startW = outlinerWidth;
+    const onMove = (ev) => {
+      if (!resizingOutlinerRef.current) return;
+      setOutlinerWidth(Math.max(160, Math.min(450, startW + (ev.clientX - startX))));
+    };
+    const onUp = () => {
+      resizingOutlinerRef.current = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const handleSelectLine = (line) => {
+    const monacoEditor = editorRef.current;
+    if (!monacoEditor || !window.monaco) return;
+
+    monacoEditor.setPosition({ lineNumber: line, column: 1 });
+    monacoEditor.revealLineInCenter(line);
+    monacoEditor.focus();
+
+    const range = new window.monaco.Range(line, 1, line, 1);
+    decorationsRef.current = monacoEditor.deltaDecorations(decorationsRef.current, [
+      {
+        range,
+        options: {
+          isWholeLine: true,
+          className: 'editor-line-highlight-pulse',
+        },
+      },
+    ]);
+
+    setTimeout(() => {
+      if (editorRef.current && decorationsRef.current.length > 0) {
+        decorationsRef.current = editorRef.current.deltaDecorations(decorationsRef.current, []);
+      }
+    }, 2000);
+  };
+
   const langConfig = LANGUAGES[editor.language];
   const editorFileName = LANG_FILE_NAMES[editor.language] || 'main.txt';
+
 
   return (
     <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column' }}>
@@ -510,7 +606,31 @@ export default function EditorPage({ user }) {
               Right
             </button>
           </div>
+          <button
+            type="button"
+            className={`outline-toggle-btn d-none d-md-flex align-items-center gap-1 ${showOutliner ? 'active' : ''}`}
+            onClick={() => setShowOutliner(!showOutliner)}
+            title="Toggle Outline Sidebar"
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="21" y1="10" x2="3" y2="10"></line>
+              <line x1="21" y1="6" x2="3" y2="6"></line>
+              <line x1="21" y1="14" x2="3" y2="14"></line>
+              <line x1="21" y1="18" x2="3" y2="18"></line>
+            </svg>
+            Outline
+          </button>
         </div>
+
         <div className="toolbar-right d-flex align-items-center gap-2">
           <div className="d-none d-md-flex align-items-center gap-2">
             <button
@@ -782,8 +902,23 @@ export default function EditorPage({ user }) {
 
       {/* ===== MAIN SPLIT ===== */}
       <div className="main-split">
+        {/* Left Outliner Sidebar */}
+        {!isMobile && showOutliner && (
+          <div className="outliner-sidebar" style={{ width: `${outlinerWidth}px` }}>
+            <SidebarOutliner
+              outline={outline}
+              onSelectLine={handleSelectLine}
+              activeLine={activeOutlineLine}
+            />
+          </div>
+        )}
+        {!isMobile && showOutliner && (
+          <div className="resize-handle-left" onMouseDown={handleOutlinerResizeStart} />
+        )}
+
         {/* EDITOR PANE */}
         <div
+
           className="editor-pane"
           style={isMobile && mobileTab !== MOBILE_TABS.CODE ? { display: 'none' } : {}}
         >
